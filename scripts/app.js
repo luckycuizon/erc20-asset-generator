@@ -6,8 +6,7 @@ var web3,
     isGoerli,
     isMetaMaskLocked,
     address,
-    tokenAddress,
-    tokenInteractive;
+    tokenAddress;
 
 // abi of StandardToken.sol
 var abi = [
@@ -462,6 +461,8 @@ var currentNetwork = $('#current-network');
 var metamaskLocked = $('#metamask-locked');
 var metamaskUnlocked = $('#metamask-unlocked');
 
+var firstFetchTokensList = true;
+
 var tokenInteractive = $('#token-interactive');
 tokenInteractive.hide();
 
@@ -526,21 +527,10 @@ window.addEventListener('load', async () => {
     }
 });
 
-function renderTokenInteractive(newTokenAddress, isInit) {
-    tokenInteractive.show();
-    tokenAddress = newTokenAddress;
-    tokenAddressText.innerHTML = `<b>${newTokenAddress}</b>`;
-
-    if(!isInit) {
-        const urlParams = new URLSearchParams(window.location.search);
-        urlParams.set('tokenAddress', newTokenAddress);
-        window.location.search = urlParams;
-    }
-}
-
 function handleAccountsChanged(accounts) {
     // Handle the new accounts, or lack thereof.
     // "accounts" will always be an array, but it can be empty.
+    window.location.reload();
 }
 
 function handleChainChanged(_chainId) {
@@ -564,11 +554,76 @@ function metamaskEvents() {
         });
 }
 
+function renderTokenInteractive(newTokenAddress, isInit) {
+    tokenInteractive.show();
+    tokenAddress = newTokenAddress;
+    tokenAddressText.innerHTML = `<b>${newTokenAddress}</b>`;
+
+    if(!isInit) {
+        const urlParams = new URLSearchParams(window.location.search);
+        urlParams.set('tokenAddress', newTokenAddress);
+        window.location.search = urlParams;
+    }
+
+    document.getElementById('tokens-list').scrollIntoView()
+}
+
+function getTokensList() {
+    tokensList.innerHTML = 'Loading you tokens ...';
+    fetch(`https://api.airtable.com/v0/appp5YUzsfGiQBc1B/Token?api_key=keyKkffIj6L6UPlR0&filterByFormula={Owner}=%22${address.toLowerCase()}%22`)
+        .then((response) => response.json())
+        .then((data) => {
+            if(data.records.length === 0) return tokensList.innerHTML = 'No token created';
+            const tokensListAirtable = data.records.map(item => item['fields']['Token']);
+
+            const searchParams = new URLSearchParams(window.location.search);
+            const tokenAddressParam = searchParams.get('tokenAddress');
+
+            let tokensHtmlText = `
+            <div class="dropdown">
+                <button class="btn dropdown-toggle" type="button" id="dropdownMenuButton" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false">
+                    <span id="currentSelectedToken">${tokenAddressParam || 'Select token'}</span>
+                </button>
+                <div class="dropdown-menu" aria-labelledby="dropdownMenuButton">  
+            `;
+            tokensListAirtable.forEach(token => tokensHtmlText += `<a class="dropdown-item ${tokenAddressParam === token ? 'active' : ''}" href="/?tokenAddress=${token}">${token}</a>`);
+            tokensHtmlText += `</div>
+            </div>`;
+
+            tokensList.innerHTML = tokensHtmlText;
+        });
+}
+
+function saveToken(token) {
+    fetch('https://api.airtable.com/v0/appp5YUzsfGiQBc1B/Token?api_key=keyKkffIj6L6UPlR0', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+            "records": [{
+                    "fields": {
+                        "Token": token.toLowerCase(),
+                        "Owner": address.toLowerCase()
+                    }
+                }]
+            }),
+    })
+    .then((response) => response.json())
+    .then((data) => {
+        getTokensList();
+        renderTokenInteractive(newContractAddress, false);
+    })
+    .catch((error) => {
+        console.error('Error:', error);
+    });
+}
+
 function start() {
     provider = web3.currentProvider;
     assetFormInput.prop("disabled", false);
     metamaskStatus.hide()
-    // metamaskEvents()
+    metamaskEvents()
     getEthNetworkId()
         .then(function (networkId) {
             if (networkId === '1') {
@@ -618,13 +673,16 @@ function start() {
             })
             .then(function (balance) {
                 accountAddress.html('<strong>Selected Account: ' + address + ' (' + balance + ' eth)</strong>').show();
+                if(firstFetchTokensList) {
+                    getTokensList();
+                    firstFetchTokensList = false;
+                };
             })
             .fail(function (err) {
                 if (err.message !== "Metamask Locked")
                     console.log(err)
             });
     }, 1000);
-
 
     const searchParams = new URLSearchParams(window.location.search);
     const tokenAddressParam = searchParams.get('tokenAddress');
@@ -762,7 +820,7 @@ assetForm.submit(function (e) {
             } else
                 statusText.innerHTML = 'Contract deployed at address <b>' + newContractAddress + '</b> - keep a record of this.'
 
-            renderTokenInteractive(newContractAddress, false)
+            saveToken(newContractAddress);
         }).catch(function (error) {
             console.error(error);
             assetFormInput.prop("disabled", false);

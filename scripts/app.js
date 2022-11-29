@@ -554,43 +554,37 @@ function metamaskEvents() {
         });
 }
 
-function renderTokenInteractive(newTokenAddress, isInit) {
+function renderTokenInteractive(newTokenAddress) {
+    console.log("newTokenAddress: ", newTokenAddress)
     tokenInteractive.show();
     tokenAddress = newTokenAddress;
     tokenAddressText.innerHTML = `<b>${newTokenAddress}</b>`;
-
-    if(!isInit) {
-        const urlParams = new URLSearchParams(window.location.search);
-        urlParams.set('tokenAddress', newTokenAddress);
-        window.location.search = urlParams;
-    }
-
-    document.getElementById('tokens-list').scrollIntoView()
+    currentSelectedToken.innerHTML = newTokenAddress;
 }
 
 function getTokensList() {
-    tokensList.innerHTML = 'Loading you tokens ...';
+    tokensList.innerHTML = `Loading you tokens ...`;
     fetch(`https://api.airtable.com/v0/appp5YUzsfGiQBc1B/Token?api_key=keyKkffIj6L6UPlR0&filterByFormula={Owner}=%22${address.toLowerCase()}%22`)
         .then((response) => response.json())
         .then((data) => {
             if(data.records.length === 0) return tokensList.innerHTML = 'No token created';
             const tokensListAirtable = data.records.map(item => item['fields']['Token']);
 
-            const searchParams = new URLSearchParams(window.location.search);
-            const tokenAddressParam = searchParams.get('tokenAddress');
-
             let tokensHtmlText = `
             <div class="dropdown">
                 <button class="btn dropdown-toggle" type="button" id="dropdownMenuButton" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false">
-                    <span id="currentSelectedToken">${tokenAddressParam || 'Select token'}</span>
+                    <span id="currentSelectedToken">${tokenAddress ? tokenAddress.toLowerCase() : 'Select token interactive'}</span>
                 </button>
                 <div class="dropdown-menu" aria-labelledby="dropdownMenuButton">  
             `;
-            tokensListAirtable.forEach(token => tokensHtmlText += `<a class="dropdown-item ${tokenAddressParam === token ? 'active' : ''}" href="/?tokenAddress=${token}">${token}</a>`);
+            tokensListAirtable.forEach(token => tokensHtmlText += `<button onClick="renderTokenInteractive('${token}')" class="dropdown-item ${tokenAddress && tokenAddress.toLowerCase() === token ? 'active' : ''}">${token}</button>`);
             tokensHtmlText += `</div>
             </div>`;
 
             tokensList.innerHTML = tokensHtmlText;
+        })
+        .catch((error) => {
+            console.error('Error:', error);
         });
 }
 
@@ -612,7 +606,7 @@ function saveToken(token) {
     .then((response) => response.json())
     .then((data) => {
         getTokensList();
-        renderTokenInteractive(newContractAddress, false);
+        renderTokenInteractive(token);
     })
     .catch((error) => {
         console.error('Error:', error);
@@ -686,7 +680,7 @@ function start() {
 
     const searchParams = new URLSearchParams(window.location.search);
     const tokenAddressParam = searchParams.get('tokenAddress');
-    if(tokenAddressParam) renderTokenInteractive(tokenAddressParam, true);
+    if(tokenAddressParam) renderTokenInteractive(tokenAddressParam);
 }
 
 function sendSync(params) {
@@ -776,6 +770,7 @@ assetForm.submit(function (e) {
         //disable all form input fields
         assetFormInput.prop("disabled", true);
         statusText.innerHTML = 'Waiting for contract to be deployed...';
+        assetLoading.innerHTML = '<div class="loader"></div>';
         var standardtokenContract = new web3.eth.Contract(abi);
         standardtokenContract.deploy({
             data: '0x' + bytecode,
@@ -810,20 +805,21 @@ assetForm.submit(function (e) {
             var newContractAddress = newContractInstance.options.address;
            
             if (isMainNetwork) {
-                statusText.innerHTML = 'Transaction  mined! Contract address: <a href="https://etherscan.io/token/' + newContractAddress + '" target="_blank">' + newContractAddress + '</a>'
+                statusText.innerHTML = 'Transaction  mined! Please check "Your token list". Contract address: <a href="https://etherscan.io/token/' + newContractAddress + '" target="_blank">' + newContractAddress + '</a>'
             } else if (isRopsten) {
-                statusText.innerHTML = 'Transaction  mined! Contract address: <a href="https://ropsten.etherscan.io/token/' + newContractAddress + '" target="_blank">' + newContractAddress + '</a>'
+                statusText.innerHTML = 'Transaction  mined! Please check "Your token list". Contract address: <a href="https://ropsten.etherscan.io/token/' + newContractAddress + '" target="_blank">' + newContractAddress + '</a>'
             } else if (isRinkeby) {
-                statusText.innerHTML = 'Transaction  mined! Contract address: <a href="https://rinkeby.etherscan.io/token/' + newContractAddress + '" target="_blank">' + newContractAddress + '</a>'
+                statusText.innerHTML = 'Transaction  mined! Please check "Your token list". Contract address: <a href="https://rinkeby.etherscan.io/token/' + newContractAddress + '" target="_blank">' + newContractAddress + '</a>'
             } else if (isGoerli) {
-                statusText.innerHTML = 'Transaction  mined! Contract address: <a href="https://goerli.etherscan.io/token/' + newContractAddress + '" target="_blank">' + newContractAddress + '</a>'
+                statusText.innerHTML = 'Transaction  mined! Please check "Your token list". Contract address: <a href="https://goerli.etherscan.io/token/' + newContractAddress + '" target="_blank">' + newContractAddress + '</a>'
             } else
-                statusText.innerHTML = 'Contract deployed at address <b>' + newContractAddress + '</b> - keep a record of this.'
-
+                statusText.innerHTML = 'Please check "Your token list". Contract deployed at address <b>' + newContractAddress + '</b> - keep a record of this.'
             saveToken(newContractAddress);
+            assetLoading.innerHTML = '';
         }).catch(function (error) {
             console.error(error);
             assetFormInput.prop("disabled", false);
+            assetLoading.innerHTML = '';
         })
     }
 });
@@ -879,6 +875,7 @@ mintForm.submit(function (e) {
     else if(!recipient) alert('Recipient can\'t be blank');
     else {
         mintFormInput.prop("disabled", true);
+        mintLoading.innerHTML = '<div class="loader"></div>';
         mintStatusText.innerHTML = 'Please confirm transaction ...';
 
         var tokenContract = new web3.eth.Contract(abi, tokenAddress);
@@ -896,10 +893,13 @@ mintForm.submit(function (e) {
         }).then(function (data) {
             mintFormInput.prop("disabled", false);
             mintStatusText.innerHTML = 'Mint successfully!';
+            mintLoading.innerHTML = '';
         }).catch(function (error) {
             console.error(error);
             mintFormInput.prop("disabled", false);
+            mintLoading.innerHTML = '';
         });
+        
     };
 });
 
@@ -910,6 +910,7 @@ transferForm.submit(function (e) {
     if(!amount) alert('Amount can\'t be blank');
     else if(!recipient) alert('Recipient can\'t be blank');
     else {
+        transferLoading.innerHTML = '<div class="loader"></div>';
         transferFormInput.prop("disabled", true);
         transferStatusText.innerHTML = 'Please confirm transaction ...';
 
@@ -927,11 +928,14 @@ transferForm.submit(function (e) {
             return;
         }).then(function (data) {
             transferFormInput.prop("disabled", false);
+            transferLoading.innerHTML = '';
             transferStatusText.innerHTML = 'Transfer successfully!';
         }).catch(function (error) {
             console.error(error);
             transferFormInput.prop("disabled", false);
+            transferLoading.innerHTML = '';
         });
+       
     };
 });
 
@@ -942,6 +946,7 @@ burnForm.submit(function (e) {
     if(!amount) alert('Amount can\'t be blank');
     else {
         burnFormInput.prop("disabled", true);
+        burnLoading.innerHTML = '<div class="loader"></div>';
         burnStatusText.innerHTML = 'Please confirm transaction ...';
 
         var tokenContract = new web3.eth.Contract(abi, tokenAddress);
@@ -959,9 +964,11 @@ burnForm.submit(function (e) {
         }).then(function (data) {
             burnFormInput.prop("disabled", false);
             burnStatusText.innerHTML = 'Burn successfully!';
+            burnLoading.innerHTML = '';
         }).catch(function (error) {
             console.error(error);
             burnFormInput.prop("disabled", false);
+            burnLoading.innerHTML = '';
         });;
     };
 });
